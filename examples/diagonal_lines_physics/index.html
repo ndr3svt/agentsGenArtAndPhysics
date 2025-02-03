@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Diagonal Lines Physics</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #222;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="artCanvas"></canvas>
+
+  <script>
+    (function() {
+      const canvas = document.getElementById('artCanvas');
+      const ctx = canvas.getContext('2d');
+
+      // Physics constants
+      const GRAVITY = 0.5;
+      const FRICTION = 0.99;
+      const RESTITUTION = 0.6;
+      const MAX_BALLS = 30;
+
+      // Utility function to get a random integer between min and max inclusive
+      function randomInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
+      // Utility function to get a random float between min and max
+      function random(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+
+      // Container for our final boxes and their line segments
+      let boxes = [];
+      let lineSegments = [];
+      let balls = [];
+
+      class Ball {
+        constructor(x, y, radius) {
+          this.x = x;
+          this.y = y;
+          this.radius = radius;
+          this.vx = random(-2, 2);
+          this.vy = 0;
+          this.color = `hsl(${randomInt(0, 360)}, 70%, 60%)`;
+        }
+
+        update() {
+          // Apply gravity
+          this.vy += GRAVITY;
+
+          // Apply friction
+          this.vx *= FRICTION;
+          this.vy *= FRICTION;
+
+          // Update position
+          this.x += this.vx;
+          this.y += this.vy;
+
+          // Bounce off canvas edges
+          if (this.x - this.radius < 0) {
+            this.x = this.radius;
+            this.vx *= -RESTITUTION;
+          }
+          if (this.x + this.radius > canvas.width) {
+            this.x = canvas.width - this.radius;
+            this.vx *= -RESTITUTION;
+          }
+          if (this.y + this.radius > canvas.height) {
+            this.y = canvas.height - this.radius;
+            this.vy *= -RESTITUTION;
+          }
+
+          // Check collisions with line segments
+          for (const segment of lineSegments) {
+            this.checkLineCollision(segment);
+          }
+        }
+
+        checkLineCollision(segment) {
+          // Vector from line start to ball center
+          const dx = this.x - segment.x1;
+          const dy = this.y - segment.y1;
+          
+          // Line segment vector
+          const lineX = segment.x2 - segment.x1;
+          const lineY = segment.y2 - segment.y1;
+          
+          // Length of line squared
+          const lineLength = lineX * lineX + lineY * lineY;
+          
+          // Projection of ball-to-line-start vector onto line vector
+          const dot = (dx * lineX + dy * lineY) / lineLength;
+          
+          // Find closest point on line segment
+          let closestX, closestY;
+          if (dot < 0) {
+            closestX = segment.x1;
+            closestY = segment.y1;
+          } else if (dot > 1) {
+            closestX = segment.x2;
+            closestY = segment.y2;
+          } else {
+            closestX = segment.x1 + dot * lineX;
+            closestY = segment.y1 + dot * lineY;
+          }
+          
+          // Vector from closest point to ball center
+          const distX = this.x - closestX;
+          const distY = this.y - closestY;
+          
+          // Distance squared
+          const distSquared = distX * distX + distY * distY;
+          
+          // Check if ball is colliding with line
+          if (distSquared < this.radius * this.radius) {
+            // Only collide if the gap is wide enough
+            if (segment.spacing >= this.radius * 2) {
+              // Normalize the collision normal
+              const dist = Math.sqrt(distSquared);
+              const normalX = distX / dist;
+              const normalY = distY / dist;
+              
+              // Move ball out of collision
+              this.x = closestX + normalX * this.radius;
+              this.y = closestY + normalY * this.radius;
+              
+              // Calculate reflection
+              const dot = this.vx * normalX + this.vy * normalY;
+              this.vx = (this.vx - 2 * dot * normalX) * RESTITUTION;
+              this.vy = (this.vy - 2 * dot * normalY) * RESTITUTION;
+            }
+          }
+        }
+
+        draw() {
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+          ctx.fillStyle = this.color;
+          ctx.fill();
+        }
+      }
+
+      // Adjust canvas size and regenerate art on resize
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        generateArt();
+      }
+      window.addEventListener('resize', resizeCanvas);
+      canvas.addEventListener('click', addBall);
+
+      // Function to add a new ball on click
+      function addBall(e) {
+        if (balls.length < MAX_BALLS) {
+          const radius = random(5, 15);
+          balls.push(new Ball(e.clientX, e.clientY, radius));
+        }
+      }
+
+      // Recursively split the given rectangle into boxes using binary space partitioning
+      function splitBox(x, y, w, h, level) {
+        if (w < 50 || h < 50 || level > 5) {
+          const thickness = randomInt(1, 8);
+          const direction = Math.random() < 0.5 ? 0 : 1;
+          boxes.push({ x, y, w, h, thickness, direction });
+          return;
+        }
+
+        let splitHorizontally = Math.random() > 0.5;
+        if (w / h > 1.5) splitHorizontally = false;
+        if (h / w > 1.5) splitHorizontally = true;
+
+        if (splitHorizontally) {
+          const splitY = y + (0.3 + Math.random() * 0.4) * h;
+          splitBox(x, y, w, splitY - y, level + 1);
+          splitBox(x, splitY, w, y + h - splitY, level + 1);
+        } else {
+          const splitX = x + (0.3 + Math.random() * 0.4) * w;
+          splitBox(x, y, splitX - x, h, level + 1);
+          splitBox(splitX, y, x + w - splitX, h, level + 1);
+        }
+      }
+
+      // Function to create line segments from a box's hash pattern
+      function createHashSegments(box) {
+        const angle = (box.direction === 0 ? 45 : -45) * Math.PI / 180;
+        const spacing = box.thickness * 6;
+        const diag = Math.sqrt(box.w * box.w + box.h * box.h);
+        const numLines = Math.ceil(diag / spacing) + 1;
+        const perpAngle = angle + Math.PI / 2;
+
+        const cx = box.x + box.w / 2;
+        const cy = box.y + box.h / 2;
+        const startOffset = -((numLines - 1) / 2) * spacing;
+
+        for (let i = 0; i < numLines; i++) {
+          const offset = startOffset + i * spacing;
+          const lineCenterX = cx + Math.cos(perpAngle) * offset;
+          const lineCenterY = cy + Math.sin(perpAngle) * offset;
+          const dx = Math.cos(angle) * diag / 2;
+          const dy = Math.sin(angle) * diag / 2;
+
+          // Create line segment with spacing information
+          lineSegments.push({
+            x1: lineCenterX - dx,
+            y1: lineCenterY - dy,
+            x2: lineCenterX + dx,
+            y2: lineCenterY + dy,
+            spacing: spacing
+          });
+        }
+      }
+
+      // Function to possibly subdivide a box and create its hash segments
+      function processBox(box) {
+        if (Math.random() < 0.4 && box.w > 80 && box.h > 80) {
+          if (Math.random() < 0.5) {
+            const splitX = box.x + (0.3 + Math.random() * 0.4) * box.w;
+            const left = {
+              x: box.x,
+              y: box.y,
+              w: splitX - box.x,
+              h: box.h,
+              thickness: randomInt(1, 8),
+              direction: Math.random() < 0.5 ? 0 : 1
+            };
+            const right = {
+              x: splitX,
+              y: box.y,
+              w: box.x + box.w - splitX,
+              h: box.h,
+              thickness: randomInt(1, 8),
+              direction: Math.random() < 0.5 ? 0 : 1
+            };
+            createHashSegments(left);
+            createHashSegments(right);
+          } else {
+            const splitY = box.y + (0.3 + Math.random() * 0.4) * box.h;
+            const top = {
+              x: box.x,
+              y: box.y,
+              w: box.w,
+              h: splitY - box.y,
+              thickness: randomInt(1, 8),
+              direction: Math.random() < 0.5 ? 0 : 1
+            };
+            const bottom = {
+              x: box.x,
+              y: splitY,
+              w: box.w,
+              h: box.y + box.h - splitY,
+              thickness: randomInt(1, 8),
+              direction: Math.random() < 0.5 ? 0 : 1
+            };
+            createHashSegments(top);
+            createHashSegments(bottom);
+          }
+        } else {
+          createHashSegments(box);
+        }
+      }
+
+      // Function to generate and draw the art
+      function generateArt() {
+        // Clear everything
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        boxes = [];
+        lineSegments = [];
+        balls = [];
+
+        // Generate the structure
+        splitBox(0, 0, canvas.width, canvas.height, 0);
+        boxes.forEach(box => processBox(box));
+
+        // Add some initial balls
+        for (let i = 0; i < 5; i++) {
+          const radius = random(5, 15);
+          const x = random(radius, canvas.width - radius);
+          const y = random(radius, canvas.height / 4);
+          balls.push(new Ball(x, y, radius));
+        }
+
+        // Start animation
+        if (!animationStarted) {
+          animationStarted = true;
+          animate();
+        }
+      }
+
+      // Animation loop
+      let animationStarted = false;
+      function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw line segments
+        lineSegments.forEach(segment => {
+          ctx.beginPath();
+          ctx.moveTo(segment.x1, segment.y1);
+          ctx.lineTo(segment.x2, segment.y2);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+
+        // Update and draw balls
+        balls.forEach(ball => {
+          ball.update();
+          ball.draw();
+        });
+
+        requestAnimationFrame(animate);
+      }
+
+      // Initialize canvas and art
+      resizeCanvas();
+    })();
+  </script>
+</body>
+</html> 

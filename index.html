@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Generative Diagonal Boxes Art</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="artCanvas"></canvas>
+  <script>
+    // Utility functions for randomness
+    function randomInt(min, max) {
+      return Math.floor(min + Math.random() * (max - min + 1));
+    }
+    function randomFloat(min, max) {
+      return min + Math.random() * (max - min);
+    }
+    
+    // Liang-Barsky clipping algorithm: clips a line (from A to B) to the rectangle defined by (rx, ry, rwidth, rheight).
+    // Returns an object with {start: {x, y}, end: {x, y}} or null if the line does not intersect.
+    function clipLineToRect(A, B, rx, ry, rwidth, rheight) {
+      var x_min = rx, y_min = ry;
+      var x_max = rx + rwidth, y_max = ry + rwidth; // (Unused but showing symmetry)
+      x_max = rx + rwidth;
+      y_max = ry + rheight;
+
+      var dx = B.x - A.x;
+      var dy = B.y - A.y;
+      
+      var u0 = 0, u1 = 1;
+      
+      function clipTest(p, q) {
+        if (p === 0) {
+          if (q < 0) {
+            return false; // Parallel and outside.
+          }
+          return true; // Parallel and inside.
+        }
+        var r = q / p;
+        if (p < 0) {
+          if (r > u1) return false;
+          if (r > u0) u0 = r;
+        } else {
+          if (r < u0) return false;
+          if (r < u1) u1 = r;
+        }
+        return true;
+      }
+      
+      if (clipTest(-dx, A.x - x_min) &&
+          clipTest(dx, x_max - A.x) &&
+          clipTest(-dy, A.y - y_min) &&
+          clipTest(dy, y_max - A.y)) {
+        if (u1 < u0) return null;
+        var C = {
+          x: A.x + u0 * dx,
+          y: A.y + u0 * dy
+        };
+        var D = {
+          x: A.x + u1 * dx,
+          y: A.y + u1 * dy
+        };
+        return { start: C, end: D };
+      }
+      return null;
+    }
+    
+    // Draw the diagonal pattern inside one "box" defined by (bx, by, bw, bh).
+    function drawDiagonalPattern(ctx, bx, by, bw, bh) {
+      // Generate random parameters per box pattern.
+      var angleDeg = randomFloat(20, 70);
+      var angle = angleDeg * Math.PI / 180;
+      var lineThickness = randomFloat(1, 5);
+      var spacing = randomFloat(8, 20);
+      
+      // Direction (D) for lines and perpendicular (E)
+      var D = { x: Math.cos(angle), y: Math.sin(angle) };
+      var E = { x: -Math.sin(angle), y: Math.cos(angle) };
+      
+      // Box center
+      var cx = bx + bw / 2;
+      var cy = by + bh / 2;
+      
+      // Determine offset range along perpendicular E for box corners.
+      var corners = [
+        { x: bx, y: by },
+        { x: bx + bw, y: by },
+        { x: bx, y: by + bh },
+        { x: bx + bw, y: by + bh }
+      ];
+      var offsets = corners.map(function(c) {
+        return (c.x - cx) * E.x + (c.y - cy) * E.y;
+      });
+      var minOffset = Math.min.apply(null, offsets);
+      var maxOffset = Math.max.apply(null, offsets);
+      
+      // Set stroke parameters.
+      ctx.lineWidth = lineThickness;
+      ctx.strokeStyle = "black";
+      
+      // Extend enough to cover the box.
+      var extendLength = Math.hypot(bw, bh);
+      
+      // Loop through offsets and draw each diagonal line after clipping.
+      for (var offset = minOffset - spacing; offset <= maxOffset + spacing; offset += spacing) {
+        // Find a point on the current line.
+        var P = { x: cx + offset * E.x, y: cy + offset * E.y };
+        // Create a long line in the direction D through point P.
+        var A = { x: P.x - extendLength * D.x, y: P.y - extendLength * D.y };
+        var B = { x: P.x + extendLength * D.x, y: P.y + extendLength * D.y };
+        // Clip the line to the box boundaries.
+        var clippedLine = clipLineToRect(A, B, bx, by, bw, bh);
+        if (clippedLine) {
+          ctx.beginPath();
+          ctx.moveTo(clippedLine.start.x, clippedLine.start.y);
+          ctx.lineTo(clippedLine.end.x, clippedLine.end.y);
+          ctx.stroke();
+        }
+      }
+    }
+    
+    // Draw the full art piece by subdividing the canvas into a random grid of boxes.
+    function drawArt() {
+      var canvas = document.getElementById('artCanvas');
+      var ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      var width = canvas.width;
+      var height = canvas.height;
+      
+      // Randomly choose number of rows and columns.
+      var numRows = randomInt(3, 7);
+      var numCols = randomInt(3, 7);
+      
+      // Generate random proportions for row heights.
+      var rowWeights = [];
+      var totalRowWeight = 0;
+      for (var i = 0; i < numRows; i++) {
+        var w = Math.random();
+        rowWeights.push(w);
+        totalRowWeight += w;
+      }
+      
+      // Generate random proportions for column widths.
+      var colWeights = [];
+      var totalColWeight = 0;
+      for (var j = 0; j < numCols; j++) {
+        var w = Math.random();
+        colWeights.push(w);
+        totalColWeight += w;
+      }
+      
+      var y = 0;
+      for (var i = 0; i < numRows; i++) {
+        var rowHeight = (rowWeights[i] / totalRowWeight) * height;
+        var x = 0;
+        for (var j = 0; j < numCols; j++) {
+          var colWidth = (colWeights[j] / totalColWeight) * width;
+          // Optionally, draw a faint border around the box:
+          // ctx.strokeStyle = "#ddd";
+          // ctx.strokeRect(x, y, colWidth, rowHeight);
+          
+          drawDiagonalPattern(ctx, x, y, colWidth, rowHeight);
+          x += colWidth;
+        }
+        y += rowHeight;
+      }
+    }
+    
+    // Initialize canvas and redraw art on window resize.
+    function init() {
+      var canvas = document.getElementById('artCanvas');
+      function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        drawArt();
+      }
+      window.addEventListener('resize', resize);
+      resize();
+    }
+    
+    window.onload = init;
+  </script>
+</body>
+</html> 

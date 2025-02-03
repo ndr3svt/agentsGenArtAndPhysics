@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Generative Diagonal Lines</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #222;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="artCanvas"></canvas>
+
+  <script>
+    (function() {
+      const canvas = document.getElementById('artCanvas');
+      const ctx = canvas.getContext('2d');
+
+      // Utility function to get a random integer between min and max inclusive
+      function randomInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
+      // Adjust canvas size and regenerate art on resize
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        generateArt();
+      }
+      window.addEventListener('resize', resizeCanvas);
+      canvas.addEventListener('click', generateArt);
+
+      // Container for our final boxes
+      let boxes = [];
+
+      // Recursively split the given rectangle into boxes using binary space partitioning
+      function splitBox(x, y, w, h, level) {
+        // If the box is too small or we reached a max recursion level, treat as final box
+        if (w < 50 || h < 50 || level > 5) {
+          const thickness = randomInt(1, 8); // line thickness between 1 and 8
+          const direction = Math.random() < 0.5 ? 0 : 1; // 0: 45°, 1: -45°
+          boxes.push({ x, y, w, h, thickness, direction });
+          return;
+        }
+
+        // Randomly decide split direction, bias based on aspect ratio
+        let splitHorizontally = Math.random() > 0.5;
+        if (w / h > 1.5) splitHorizontally = false;
+        if (h / w > 1.5) splitHorizontally = true;
+
+        if (splitHorizontally) {
+          const splitY = y + (0.3 + Math.random() * 0.4) * h; // split between 30% and 70% of height
+          splitBox(x, y, w, splitY - y, level + 1);
+          splitBox(x, splitY, w, y + h - splitY, level + 1);
+        } else {
+          const splitX = x + (0.3 + Math.random() * 0.4) * w; // split between 30% and 70% of width
+          splitBox(x, y, splitX - x, h, level + 1);
+          splitBox(splitX, y, x + w - splitX, h, level + 1);
+        }
+      }
+
+      // Function to fill a given box with hashed diagonal lines
+      function drawHash(box) {
+        ctx.save();
+        // Clip to the box
+        ctx.beginPath();
+        ctx.rect(box.x, box.y, box.w, box.h);
+        ctx.clip();
+
+        // Set a random hue for the hash lines
+        const hue = randomInt(0, 360);
+        ctx.strokeStyle = 'hsl(' + hue + ', 70%, 60%)';
+        ctx.lineWidth = box.thickness;
+
+        // Determine the angle: 45° for direction 0, -45° for direction 1
+        const angle = (box.direction === 0 ? 45 : -45) * Math.PI / 180;
+        const spacing = box.thickness * 6; // spacing between lines
+        const diag = Math.sqrt(box.w * box.w + box.h * box.h);
+        const numLines = Math.ceil(diag / spacing) + 1;
+        const perpAngle = angle + Math.PI / 2; // perpendicular to the line direction
+
+        // Center of the box
+        const cx = box.x + box.w / 2;
+        const cy = box.y + box.h / 2;
+        const startOffset = -((numLines - 1) / 2) * spacing;
+
+        for (let i = 0; i < numLines; i++) {
+          const offset = startOffset + i * spacing;
+          // Determine the center of each line
+          const lineCenterX = cx + Math.cos(perpAngle) * offset;
+          const lineCenterY = cy + Math.sin(perpAngle) * offset;
+          const dx = Math.cos(angle) * diag / 2;
+          const dy = Math.sin(angle) * diag / 2;
+          ctx.beginPath();
+          ctx.moveTo(lineCenterX - dx, lineCenterY - dy);
+          ctx.lineTo(lineCenterX + dx, lineCenterY + dy);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+
+        // Draw a subtle border for the box
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2);
+      }
+
+      // Function to possibly subdivide a box further and then draw the hash fill
+      function drawSubdividedBox(box) {
+        // Only subdivide if box is reasonably large
+        if (Math.random() < 0.4 && box.w > 80 && box.h > 80) {
+          if (Math.random() < 0.5) {
+            // Subdivide vertically: split into left and right parts
+            const splitX = box.x + (0.3 + Math.random() * 0.4) * box.w;
+            const left = {
+              x: box.x,
+              y: box.y,
+              w: splitX - box.x,
+              h: box.h,
+              thickness: randomInt(1, 8),
+              direction: Math.random() < 0.5 ? 0 : 1
+            };
+            const right = {
+              x: splitX,
+              y: box.y,
+              w: box.x + box.w - splitX,
+              h: box.h,
+              thickness: randomInt(1, 8),
+              direction: Math.random() < 0.5 ? 0 : 1
+            };
+            drawHash(left);
+            drawHash(right);
+          } else {
+            // Subdivide horizontally: split into top and bottom parts
+            const splitY = box.y + (0.3 + Math.random() * 0.4) * box.h;
+            const top = {
+              x: box.x,
+              y: box.y,
+              w: box.w,
+              h: splitY - box.y,
+              thickness: randomInt(1, 8),
+              direction: Math.random() < 0.5 ? 0 : 1
+            };
+            const bottom = {
+              x: box.x,
+              y: splitY,
+              w: box.w,
+              h: box.y + box.h - splitY,
+              thickness: randomInt(1, 8),
+              direction: Math.random() < 0.5 ? 0 : 1
+            };
+            drawHash(top);
+            drawHash(bottom);
+          }
+        } else {
+          drawHash(box);
+        }
+      }
+
+      // Function to generate and draw the art
+      function generateArt() {
+        // Clear the canvas and boxes
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        boxes = [];
+        // Partition the canvas
+        splitBox(0, 0, canvas.width, canvas.height, 0);
+
+        // For each final partition, draw the hashed pattern (with possible subdivisions)
+        boxes.forEach(box => {
+          drawSubdividedBox(box);
+        });
+      }
+
+      // Initialize canvas and art
+      resizeCanvas();
+    })();
+  </script>
+</body>
+</html> 
